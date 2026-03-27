@@ -6,52 +6,98 @@ Arduino UNO Q (STM32 + QRB2210) montado en Unitree Go2.
 ## Arquitectura
 
 ```
-MQ-4/MQ-7/MQ-135 (ADC) ── STM32 ──UART──> QRB2210 ──> ROS2 DDS
+MQ-4/MQ-7/MQ-135 (ADC) ── STM32 ──UART──> QRB2210 (Docker ROS2) ──> ROS2 DDS
 ```
 
 ## Requisitos
 
-- Python 3.10
-- ROS2 Humble Hawksbill
-- pyserial
+- Arduino UNO Q con Debian GNU/Linux 13 (trixie)
+- Docker instalado en QRB2210
+- Imagen `ros:humble-ros-base`
 
 ## Instalacion
 
+### 1. Instalar Docker en QRB2210
+
 ```bash
-# Dependencias Python
-pip install pyserial
+ssh root@172.51.1.6
+sudo apt update
+sudo apt install -y docker.io
+sudo docker pull ros:humble-ros-base
+```
 
-# Clonar en workspace ROS2
-cd ~/ros2_ws/src
-cp -r hardware_layer .
-cp -r minebot_msgs .
+### 2. Subir codigo al QRB2210
 
-# Build
-cd ~/ros2_ws
-colcon build --packages-select minebot_msgs hardware_layer
+Desde tu PC:
 
-# Source
-source install/setup.bash
+```bash
+mkdir -p /home/arduino/minebot_ws/src   # en el QRB2210 via SSH
+scp -r hardware_layer/ arduino@172.51.1.6:/home/arduino/minebot_ws/src/
+```
+
+### 3. Crear contenedor persistente (una sola vez)
+
+```bash
+sudo docker run -d \
+  --name minebot \
+  --restart=always \
+  --privileged \
+  --net=host \
+  -v /dev:/dev \
+  -v /home/arduino/minebot_ws:/ros2_ws \
+  ros:humble-ros-base \
+  bash -c "stty -F /dev/ttyHS1 115200 raw -echo && source /opt/ros/humble/setup.bash && python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
+```
+
+Esto crea un contenedor llamado `minebot` que:
+- Se reinicia automaticamente al encender el Arduino UNO Q (`--restart=always`)
+- Configura el serial con `stty` antes de lanzar el nodo
+- Corre `gas_sensor_node.py` automaticamente
+
+### 4. Verificar que funciona
+
+```bash
+# Ver logs del contenedor
+sudo docker logs -f minebot
+
+# Entrar al contenedor para inspeccionar topicos
+sudo docker exec -it minebot bash
+source /opt/ros/humble/setup.bash
+ros2 topic echo /gas/mq4
+```
+
+## Comandos utiles del contenedor
+
+```bash
+# Ver estado
+sudo docker ps
+
+# Ver logs en tiempo real
+sudo docker logs -f minebot
+
+# Reiniciar el nodo
+sudo docker restart minebot
+
+# Parar el nodo
+sudo docker stop minebot
+
+# Iniciar de nuevo
+sudo docker start minebot
+
+# Entrar al contenedor para debug
+sudo docker exec -it minebot bash
+
+# Actualizar codigo (tras scp) y reiniciar
+sudo docker restart minebot
+
+# Eliminar contenedor (si necesitas recrearlo)
+sudo docker rm -f minebot
 ```
 
 ## Firmware STM32
 
 Abrir `firmware/stm32_sensor_reader.ino` en Arduino IDE o PlatformIO.
-Seleccionar board STM32 (Arduino UNO Q) y subir via USB (solo para flash; operacion normal usa UART interno).
-
-## Ejecucion
-
-```bash
-# Lanzar nodo de gas con parametros
-ros2 launch hardware_layer hardware_layer.launch.py
-
-# Verificar topicos
-ros2 topic list
-ros2 topic echo /gas/mq4
-ros2 topic echo /gas/mq7
-ros2 topic echo /gas/mq135
-ros2 topic echo /gas/status
-```
+Seleccionar board STM32 (Arduino UNO Q) y subir via USB (solo para flash; operacion normal usa UART interno `/dev/ttyHS1`).
 
 ## Topicos publicados
 
@@ -84,6 +130,8 @@ Editar `config/sensor_thresholds.yaml` para ajustar umbrales sin recompilar:
 ```yaml
 gas_sensor_node:
   ros__parameters:
+    serial_port: "/dev/ttyHS1"
+    baud_rate: 115200
     mq4_warning_ppm: 500.0
     mq4_critical_ppm: 1000.0
     mq7_warning_ppm: 50.0

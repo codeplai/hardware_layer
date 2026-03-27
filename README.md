@@ -13,7 +13,7 @@ MQ-4/MQ-7/MQ-135 (ADC) ── STM32 ──UART──> QRB2210 (Docker ROS2) ─�
 
 - Arduino UNO Q con Debian GNU/Linux 13 (trixie)
 - Docker instalado en QRB2210
-- Imagen `ros:humble-ros-base`
+- Imagen `ros:foxy-ros-base`
 
 ## Instalacion
 
@@ -23,7 +23,7 @@ MQ-4/MQ-7/MQ-135 (ADC) ── STM32 ──UART──> QRB2210 (Docker ROS2) ─�
 ssh root@172.51.1.6
 sudo apt update
 sudo apt install -y docker.io
-sudo docker pull ros:humble-ros-base
+sudo docker pull ros:foxy-ros-base
 ```
 
 ### 2. Subir codigo al QRB2210
@@ -45,8 +45,8 @@ sudo docker run -d \
   --net=host \
   -v /dev:/dev \
   -v /home/arduino/minebot_ws:/ros2_ws \
-  ros:humble-ros-base \
-  bash -c "stty -F /dev/ttyHS1 115200 raw -echo && source /opt/ros/humble/setup.bash && python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
+  ros:foxy-ros-base \
+  bash -c "stty -F /dev/ttyHS1 115200 raw -echo && source /opt/ros/foxy/setup.bash && python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
 ```
 
 Esto crea un contenedor llamado `minebot` que:
@@ -62,7 +62,7 @@ sudo docker logs -f minebot
 
 # Entrar al contenedor para inspeccionar topicos
 sudo docker exec -it minebot bash
-source /opt/ros/humble/setup.bash
+source /opt/ros/foxy/setup.bash
 ros2 topic echo /gas/mq4
 ```
 

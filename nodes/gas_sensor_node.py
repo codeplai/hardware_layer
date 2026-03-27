@@ -2,10 +2,13 @@
 """
 MINEBOT-Q — Gas Sensor ROS2 Node
 Reads JSON from STM32 via UART and publishes gas concentration topics.
+Uses raw file I/O instead of pyserial (QRB2210 compatibility).
 """
 
 import json
 import math
+import os
+import subprocess
 import threading
 import time
 
@@ -13,8 +16,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import Float32, String
-
-import serial
 
 
 class GasSensorNode(Node):
@@ -52,23 +53,29 @@ class GasSensorNode(Node):
 
         self.get_logger().info('Gas sensor node started')
 
-    def _open_serial(self):
+    def _configure_port(self):
+        """Configure serial port with stty before opening."""
         port = self.get_parameter('serial_port').get_parameter_value().string_value
         baud = self.get_parameter('baud_rate').get_parameter_value().integer_value
-        return serial.Serial(port, baud, timeout=1.0)
+        subprocess.run(
+            ['stty', '-F', port, str(baud), 'raw', '-echo'],
+            check=True
+        )
 
     def _serial_reader(self):
         backoff = 1.0
         max_backoff = 30.0
+        port = self.get_parameter('serial_port').get_parameter_value().string_value
 
         while rclpy.ok():
             try:
-                ser = self._open_serial()
-                self.get_logger().info(f'Serial connected: {ser.port}')
+                self._configure_port()
+                f = open(port, 'rb')
+                self.get_logger().info(f'Serial connected: {port}')
                 backoff = 1.0
 
                 while rclpy.ok():
-                    line = ser.readline()
+                    line = f.readline()
                     if not line:
                         continue
                     try:
@@ -78,10 +85,15 @@ class GasSensorNode(Node):
                     except (json.JSONDecodeError, UnicodeDecodeError):
                         pass
 
-            except serial.SerialException as e:
+            except (OSError, subprocess.CalledProcessError) as e:
                 self.get_logger().warn(f'Serial error: {e}. Retrying in {backoff:.1f}s')
                 time.sleep(backoff)
                 backoff = min(backoff * 2, max_backoff)
+            finally:
+                try:
+                    f.close()
+                except Exception:
+                    pass
 
     def _get_status(self, mq4: float, mq7: float, mq135: float) -> str:
         mq4_crit = self.get_parameter('mq4_critical_ppm').get_parameter_value().double_value

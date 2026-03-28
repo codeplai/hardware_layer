@@ -45,14 +45,35 @@ sudo docker run -d \
   --net=host \
   -v /dev:/dev \
   -v /home/arduino/minebot_ws:/ros2_ws \
+  -e ROS_DOMAIN_ID=42 \
+  -e ROS_LOCALHOST_ONLY=0 \
+  -e ROS_IP=10.95.229.127 \
+  -e ROS_HOSTNAME=10.95.229.127 \
+  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
   ros:foxy-ros-base \
-  bash -c "stty -F /dev/ttyHS1 115200 raw -echo && source /opt/ros/foxy/setup.bash && python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
+  bash -c "apt-get update && apt-get install -y python3-colcon-common-extensions > /dev/null 2>&1 && \
+           source /opt/ros/foxy/setup.bash && \
+           cd /ros2_ws && colcon build --packages-select minebot_msgs && \
+           source /ros2_ws/install/setup.bash && \
+           stty -F /dev/ttyHS1 115200 raw -echo && \
+           python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
 ```
 
 Esto crea un contenedor llamado `minebot` que:
-- Se reinicia automaticamente al encender el Arduino UNO Q (`--restart=always`)
+- Instala colcon y compila `minebot_msgs` al primer arranque
 - Configura el serial con `stty` antes de lanzar el nodo
 - Corre `gas_sensor_node.py` automaticamente
+- Se reinicia automaticamente al encender el Arduino UNO Q (`--restart=always`)
+
+**Variables de entorno DDS:**
+
+| Variable | Valor | Funcion |
+|----------|-------|---------|
+| `ROS_DOMAIN_ID` | `42` | Dominio DDS compartido con el Go2 |
+| `ROS_LOCALHOST_ONLY` | `0` | Permite descubrimiento en red (no solo localhost) |
+| `ROS_IP` | `10.95.229.127` | IP del QRB2210 en la red del Go2 |
+| `ROS_HOSTNAME` | `10.95.229.127` | Hostname para DDS discovery |
+| `RMW_IMPLEMENTATION` | `rmw_fastrtps_cpp` | Middleware DDS compatible con Go2 |
 
 ### 4. Verificar que funciona
 
@@ -63,6 +84,7 @@ sudo docker logs -f minebot
 # Entrar al contenedor para inspeccionar topicos
 sudo docker exec -it minebot bash
 source /opt/ros/foxy/setup.bash
+export ROS_DOMAIN_ID=42
 ros2 topic echo /gas/mq4
 ```
 

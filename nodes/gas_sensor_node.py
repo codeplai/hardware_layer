@@ -5,11 +5,11 @@ Reads JSON from STM32 via UART and publishes gas concentration topics.
 Uses raw file I/O instead of pyserial (QRB2210 compatibility).
 
 Topics published:
-  /gas/mq4      std_msgs/Float32  - CH4 concentration (ppm)
-  /gas/mq7      std_msgs/Float32  - CO concentration (ppm)
-  /gas/mq135    std_msgs/Float32  - Air quality NH3/NOx/H2S (ppm)
-  /gas/status   std_msgs/String   - SAFE | WARNING | CRITICAL
-  /gas/readings std_msgs/String   - JSON with all readings (for rosbridge)
+  /gas/mq4      std_msgs/Float32           - CH4 concentration (ppm)
+  /gas/mq7      std_msgs/Float32           - CO concentration (ppm)
+  /gas/mq135    std_msgs/Float32           - Air quality NH3/NOx/H2S (ppm)
+  /gas/status   std_msgs/String            - SAFE | WARNING | CRITICAL
+  /gas/readings minebot_msgs/GasReadings   - Unified typed message (for rosbridge)
 """
 
 import json
@@ -21,7 +21,8 @@ import time
 import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
-from std_msgs.msg import Float32, String
+from std_msgs.msg import Float32, String, Header
+from minebot_msgs.msg import GasReadings
 
 
 class GasSensorNode(Node):
@@ -45,8 +46,8 @@ class GasSensorNode(Node):
         self.pub_mq135 = self.create_publisher(Float32, '/gas/mq135', 10)
         self.pub_status = self.create_publisher(String, '/gas/status', 10)
 
-        # Publisher — unified topic (JSON string for rosbridge)
-        self.pub_readings = self.create_publisher(String, '/gas/readings', 10)
+        # Publisher — unified typed topic (for rosbridge)
+        self.pub_readings = self.create_publisher(GasReadings, '/gas/readings', 10)
 
         # Publish timer at 10 Hz
         self.create_timer(0.1, self.publish_callback)
@@ -154,15 +155,15 @@ class GasSensorNode(Node):
         status_msg.data = status
         self.pub_status.publish(status_msg)
 
-        # Unified topic — JSON string for rosbridge (std_msgs/String)
-        readings_msg = String()
-        readings_msg.data = json.dumps({
-            'mq4_ppm': round(mq4_val, 1),
-            'mq7_ppm': round(mq7_val, 1),
-            'mq135_ppm': round(mq135_val, 1),
-            'status': status,
-            'timestamp': ts_val
-        })
+        # Unified typed topic (minebot_msgs/GasReadings)
+        readings_msg = GasReadings()
+        readings_msg.header.stamp = self.get_clock().now().to_msg()
+        readings_msg.header.frame_id = 'gas_sensors'
+        readings_msg.mq4_ppm = float(mq4_val)
+        readings_msg.mq7_ppm = float(mq7_val)
+        readings_msg.mq135_ppm = float(mq135_val)
+        readings_msg.status = status
+        readings_msg.timestamp = int(ts_val)
         self.pub_readings.publish(readings_msg)
 
         if status != self._last_status:

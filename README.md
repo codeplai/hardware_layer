@@ -31,11 +31,17 @@ sudo docker pull ros:foxy-ros-base
 Desde tu PC:
 
 ```bash
-mkdir -p /home/arduino/minebot_ws/src   # en el QRB2210 via SSH
 scp -r hardware_layer/ arduino@172.51.1.6:/home/arduino/minebot_ws/src/
 ```
 
-### 3. Crear contenedor persistente (una sola vez)
+### 3. Construir imagen Docker (una sola vez)
+
+```bash
+cd /home/arduino/minebot_ws/src/hardware_layer
+sudo docker build -t minebot:latest .
+```
+
+### 4. Crear contenedor persistente (una sola vez)
 
 ```bash
 sudo docker run -d \
@@ -44,26 +50,30 @@ sudo docker run -d \
   --privileged \
   --net=host \
   -v /dev:/dev \
-  -v /home/arduino/minebot_ws:/ros2_ws \
-  -e ROS_DOMAIN_ID=42 \
-  -e ROS_LOCALHOST_ONLY=0 \
-  -e ROS_IP=10.95.229.127 \
-  -e ROS_HOSTNAME=10.95.229.127 \
-  -e RMW_IMPLEMENTATION=rmw_fastrtps_cpp \
-  ros:foxy-ros-base \
-  bash -c "apt-get update && apt-get install -y python3-colcon-common-extensions > /dev/null 2>&1 && \
-           source /opt/ros/foxy/setup.bash && \
-           cd /ros2_ws && colcon build --packages-select minebot_msgs && \
-           source /ros2_ws/install/setup.bash && \
-           stty -F /dev/ttyHS1 115200 raw -echo && \
-           python3 /ros2_ws/src/hardware_layer/nodes/gas_sensor_node.py"
+  minebot:latest
 ```
 
 Esto crea un contenedor llamado `minebot` que:
-- Instala colcon y compila `minebot_msgs` al primer arranque
-- Configura el serial con `stty` antes de lanzar el nodo
-- Corre `gas_sensor_node.py` automaticamente
-- Se reinicia automaticamente al encender el Arduino UNO Q (`--restart=always`)
+- Arranca automaticamente al encender el Arduino UNO Q (`--restart=always`)
+- Ya tiene `minebot_msgs` compilado dentro de la imagen (no recompila cada vez)
+- Configura el serial y lanza `gas_sensor_node.py` automaticamente
+
+### Actualizar codigo
+
+Cuando modifiques el nodo o los mensajes, reconstruye la imagen:
+
+```bash
+cd /home/arduino/minebot_ws/src/hardware_layer
+sudo docker build -t minebot:latest .
+sudo docker rm -f minebot
+sudo docker run -d \
+  --name minebot \
+  --restart=always \
+  --privileged \
+  --net=host \
+  -v /dev:/dev \
+  minebot:latest
+```
 
 **Variables de entorno DDS:**
 
